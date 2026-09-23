@@ -53,10 +53,12 @@ void ULoginWidget::OnLoginButtonClicked()
 	}
 	FString Username = LoginInput->GetText().ToString();
 	FString Password = PasswordInput->GetText().ToString();
+	bool bHasError = false;
+
 	if (Username.IsEmpty()) {
 		ErrorText_Login->SetText(FText::FromString(TEXT("Введіть логін")));
 		ErrorText_Login->SetVisibility(ESlateVisibility::Visible);
-		return;
+		bHasError = true;
 	}
 	else {
 		ErrorText_Login->SetVisibility(ESlateVisibility::Hidden);
@@ -65,10 +67,14 @@ void ULoginWidget::OnLoginButtonClicked()
 	if (Password.IsEmpty()) {
 		ErrorText_Password->SetText(FText::FromString(TEXT("Введіть пароль")));
 		ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
-		return;
+		bHasError = true;
 	}
 	else {
 		ErrorText_Password->SetVisibility(ESlateVisibility::Hidden);
+	}
+
+	if (bHasError) {
+		return;
 	}
 	
 	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
@@ -173,12 +179,16 @@ void ULoginWidget::OnServerResponseReceived(FString Command, FString Status)
 	if (Command == TEXT("LOGIN_RESPONSE"))
 	{
 		if (Status == TEXT("success")) {
-			ErrorText_Login->SetVisibility(ESlateVisibility::Hidden);
+			ErrorText_Password->SetVisibility(ESlateVisibility::Hidden);
 			WidgetSwitcher_0->SetActiveWidgetIndex(2);
 		}
+		else if (Status == TEXT("locked")) {
+			ErrorText_Password->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
+			ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
+		}
 		else {
-			ErrorText_Login->SetText(FText::FromString(TEXT("Невірний логін або пароль!")));
-			ErrorText_Login->SetVisibility(ESlateVisibility::Visible);
+			ErrorText_Password->SetText(FText::FromString(TEXT("Невірний логін або пароль!")));
+			ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
 	else if (Command == TEXT("REGISTER_RESPONSE"))
@@ -187,8 +197,12 @@ void ULoginWidget::OnServerResponseReceived(FString Command, FString Status)
 			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
 			WidgetSwitcher_0->SetActiveWidgetIndex(2);
 		}
+		else if (Status == TEXT("locked")) {
+			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
+			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
+		}
 		else {
-			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Користувач вже існує!")));
+			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Користувач вже існує або помилка!")));
 			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
 		}
 	}
