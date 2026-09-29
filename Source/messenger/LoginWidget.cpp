@@ -42,6 +42,11 @@ void ULoginWidget::NativeConstruct()
 	if (NetSubsystem && NetSubsystem->ResponseRouter)
 	{
 		NetSubsystem->ResponseRouter->OnServerResponse.AddDynamic(this, &ULoginWidget::OnServerResponseReceived);
+
+		NetSubsystem->ResponseRouter->OnSearchResultsDelegate.AddDynamic(this, &ULoginWidget::UpdateSearchResults);
+	}
+	if (SearchInputText) {
+		SearchInputText->OnTextChanged.AddDynamic(this, &ULoginWidget::OnSearchTextChanged);
 	}
 }
 
@@ -81,17 +86,25 @@ void ULoginWidget::OnLoginButtonClicked()
 
 	if (NetSubsystem) {
 		if (NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
-			TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject());
+			TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
+			InnerJson->SetStringField(TEXT("Username"), Username);
+			InnerJson->SetStringField(TEXT("Password"), Password);
 
-			JsonObject->SetStringField(TEXT("Command"), TEXT("LOGIN"));
-			JsonObject->SetStringField(TEXT("Username"), Username);
-			JsonObject->SetStringField(TEXT("Password"), Password);
+			FString InnerPayload;
+			TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
+			FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
 
-			FString Payload;
-			TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Payload);
-			FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+			FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
 
-			NetSubsystem->SendTextMessage(Payload);
+			TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
+			EnvelopeJson->SetStringField(TEXT("Command"), TEXT("LOGIN"));
+			EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
+
+			FString FinalString;
+			TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
+			FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
+
+			NetSubsystem->SendTextMessage(FinalString);
 		}
 		else {
 			UE_LOG(LogTemp, Error, TEXT("Не вдалося підключитися до сервера!"));
@@ -148,17 +161,25 @@ void ULoginWidget::SendRegisterRequest(const FString& Username, const FString& P
 
 		if (NetSubsystem) {
 			if (NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
-				TSharedPtr<FJsonObject> JsonObject = MakeShareable(new FJsonObject());
+				TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
+				InnerJson->SetStringField(TEXT("Username"), Username);
+				InnerJson->SetStringField(TEXT("Password"), Password);
 
-				JsonObject->SetStringField(TEXT("Command"), TEXT("REGISTER"));
-				JsonObject->SetStringField(TEXT("Username"), Username);
-				JsonObject->SetStringField(TEXT("Password"), Password);
+				FString InnerPayload;
+				TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
+				FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
 
-				FString Payload;
-				TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Payload);
-				FJsonSerializer::Serialize(JsonObject.ToSharedRef(), Writer);
+				FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
 
-				NetSubsystem->SendTextMessage(Payload);
+				TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
+				EnvelopeJson->SetStringField(TEXT("Command"), TEXT("REGISTER"));
+				EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
+
+				FString FinalString;
+				TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
+				FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
+
+				NetSubsystem->SendTextMessage(FinalString);
 			}
 			else {
 				UE_LOG(LogTemp, Error, TEXT("Не вдалося підключитися до сервера при реєстрації!"));
@@ -172,17 +193,49 @@ void ULoginWidget::SendRegisterRequest(const FString& Username, const FString& P
 	
 }
 
-void ULoginWidget::OnServerResponseReceived(FString Command, FString Status)
+void ULoginWidget::OnServerResponseReceived(FString Command, FString StatusData)
 {
 	UE_LOG(LogTemp, Warning, TEXT("[WIDGET] Отримано сигнал від роутера!"));
 
+	FString RealStatus = StatusData;
+
+	if (Command == TEXT("LOGIN_RESPONSE") || Command == TEXT("REGISTER_RESPONSE") || Command == TEXT("SEARCH_RESPONSE"))
+	{
+		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+		if (NetSubsystem && NetSubsystem->CryptoClient)
+		{
+			FString DecryptedStr = NetSubsystem->CryptoClient->DecryptAES(StatusData);
+
+			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(DecryptedStr);
+			TSharedPtr<FJsonObject> DecryptedJson;
+			if (FJsonSerializer::Deserialize(Reader, DecryptedJson) && DecryptedJson.IsValid())
+			{
+				RealStatus = DecryptedJson->GetStringField(TEXT("status"));
+
+				if (Command == TEXT("SEARCH_RESPONSE"))
+				{
+					const TArray<TSharedPtr<FJsonValue>>* UsersArray;
+					if (DecryptedJson->TryGetArrayField(TEXT("users"), UsersArray))
+					{
+						TArray<FString> FoundUsers;
+						for (const TSharedPtr<FJsonValue>& Val : *UsersArray)
+						{
+							FoundUsers.Add(Val->AsString());
+						}
+						UpdateSearchResults(FoundUsers);
+					}
+				}
+			}
+		}
+	}
+
 	if (Command == TEXT("LOGIN_RESPONSE"))
 	{
-		if (Status == TEXT("success")) {
+		if (RealStatus == TEXT("success")) {
 			ErrorText_Password->SetVisibility(ESlateVisibility::Hidden);
 			WidgetSwitcher_0->SetActiveWidgetIndex(2);
 		}
-		else if (Status == TEXT("locked")) {
+		else if (RealStatus == TEXT("locked")) {
 			ErrorText_Password->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
 			ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
 		}
@@ -193,11 +246,11 @@ void ULoginWidget::OnServerResponseReceived(FString Command, FString Status)
 	}
 	else if (Command == TEXT("REGISTER_RESPONSE"))
 	{
-		if (Status == TEXT("success")) {
+		if (RealStatus == TEXT("success")) {
 			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
 			WidgetSwitcher_0->SetActiveWidgetIndex(2);
 		}
-		else if (Status == TEXT("locked")) {
+		else if (RealStatus == TEXT("locked")) {
 			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
 			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
 		}
@@ -205,5 +258,89 @@ void ULoginWidget::OnServerResponseReceived(FString Command, FString Status)
 			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Користувач вже існує або помилка!")));
 			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
 		}
+	}
+}
+
+void ULoginWidget::OnSearchCommitted(const FText& Text, ETextCommit::Type CommitMethod)
+{
+	if (CommitMethod == ETextCommit::OnEnter) {
+		FString SearchQuery = SearchInputText->GetText().ToString();
+		if (SearchQuery.IsEmpty()) return;
+
+		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+		if (NetSubsystem && NetSubsystem->CryptoClient) {
+
+			TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
+			InnerJson->SetStringField(TEXT("username"), SearchQuery);
+
+			FString InnerPayload;
+			TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
+			FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
+
+			FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
+
+			TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
+			EnvelopeJson->SetStringField(TEXT("Command"), TEXT("SEARCH_USER"));
+			EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
+
+			FString FinalString;
+			TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
+			FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
+
+			NetSubsystem->SendTextMessage(FinalString);
+		}
+	}
+}
+
+void ULoginWidget::UpdateSearchResults(const TArray<FString>& FoundUsers)
+{
+	if (!ChatsScrollBox || !UserListItemClass) return;
+
+	UE_LOG(LogTemp, Warning, TEXT("[UI] Будемо малювати кнопок: %d"), FoundUsers.Num());
+
+	ChatsScrollBox->ClearChildren();
+
+	for (const FString& Username : FoundUsers)
+	{
+		UUserListItemWidget* NewItem = CreateWidget<UUserListItemWidget>(this, UserListItemClass);
+
+		if (NewItem)
+		{
+			NewItem->Setup(Username);
+
+			ChatsScrollBox->AddChild(NewItem);
+		}
+	}
+}
+
+void ULoginWidget::OnSearchTextChanged(const FText& Text)
+{
+	FString SearchQuery = Text.ToString();
+
+	if (SearchQuery.IsEmpty()) {
+		UpdateSearchResults(TArray<FString>());
+		return;
+	}
+
+	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+	if (NetSubsystem && NetSubsystem->CryptoClient) {
+		TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
+		InnerJson->SetStringField(TEXT("username"), SearchQuery);
+
+		FString InnerPayload;
+		TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
+		FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
+
+		FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
+
+		TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
+		EnvelopeJson->SetStringField(TEXT("Command"), TEXT("SEARCH_USER"));
+		EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
+
+		FString FinalString;
+		TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
+		FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
+
+		NetSubsystem->SendTextMessage(FinalString);
 	}
 }

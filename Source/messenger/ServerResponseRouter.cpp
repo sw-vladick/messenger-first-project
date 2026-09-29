@@ -25,3 +25,8 @@ void UServerResponseRouter::HandleRegisterResponse(FString Status)
 {
 	UE_LOG(LogTemp, Warning, TEXT("[ROUTER] Логіка реєстрації оброблена. Статус: %s"), *Status);
 }
+
+void UServerResponseRouter::SendSearchResults(const TArray<FString>& FoundUsers)
+{
+	OnSearchResultsDelegate.Broadcast(FoundUsers);
+}

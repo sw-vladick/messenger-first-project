@@ -9,6 +9,7 @@
 #include "Interfaces/ipv4/ipv4address.h"
 #include "ServerResponseRouter.h"
 #include "DataReceiverRunnable.h"
+#include "UCryptoClient.h"
 #include "NetworkManagerSubsystem.generated.h"
 
 
@@ -27,6 +28,9 @@ public:
 	class UServerResponseRouter* ResponseRouter;
 
 	class DataReceiverRunnable* ReceiverThread;
+
+	class UCryptoClient* CryptoClient;
 private:
 	FSocket* ClientSocket;
+	
 };

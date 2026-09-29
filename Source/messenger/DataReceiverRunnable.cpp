@@ -59,12 +59,20 @@ uint32 DataReceiverRunnable::Run() {
 				TSharedPtr<FJsonObject> JsonObject;
 
 				if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid()) {
-					FString Command = JsonObject->GetStringField(TEXT("command"));
-					FString Status = JsonObject->GetStringField(TEXT("status"));
 
-					AsyncTask(ENamedThreads::GameThread, [this, Command, Status]() {
+					FString Command = JsonObject->GetStringField(TEXT("command"));
+					FString StatusData;
+
+					if (JsonObject->HasField(TEXT("payload"))) {
+						StatusData = JsonObject->GetStringField(TEXT("payload"));
+					}
+					else if (JsonObject->HasField(TEXT("status"))) {
+						StatusData = JsonObject->GetStringField(TEXT("status"));
+					}
+
+					AsyncTask(ENamedThreads::GameThread, [this, Command, StatusData]() {
 						if (Router) {
-							Router->ProcessServerResponse(Command, Status);
+							Router->ProcessServerResponse(Command, StatusData);
 						}
 						});
 				}

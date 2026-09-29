@@ -13,6 +13,8 @@
 #include "NetworkConstants.h"
 #include "Serialization/JsonSerializer.h"
 #include "Components/WidgetSwitcher.h"
+#include "Components/ScrollBox.h"
+#include "UserListItemWidget.h"
 #include "LoginWidget.generated.h"
 
 /**
@@ -57,6 +59,14 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Network | Auth")
 	void SendRegisterRequest(const FString& Username, const FString& Password);
 
+	UFUNCTION()
+	void OnSearchCommitted(const FText& Text, ETextCommit::Type CommitMethod);
+
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UUserListItemWidget> UserListItemClass;
+
+	UFUNCTION()
+	void OnSearchTextChanged(const FText& Text);
 public:
 	UPROPERTY(meta = (BindWidget))
 	UEditableTextBox* LoginInput;
@@ -96,4 +106,16 @@ public:
 
 	UPROPERTY(BlueprintReadOnly, meta = (BindWidget))
 	class UTextBlock* ErrorText_Password_Reg;
+
+	UPROPERTY(meta = (BindWidget))
+	UEditableTextBox* SearchInputText;
+
+	UPROPERTY(meta = (BindWidget))
+	class UScrollBox* ScrollChat;
+
+	UPROPERTY(meta = (BindWidget))
+	class UScrollBox* ChatsScrollBox;
+
+	UFUNCTION()
+	void UpdateSearchResults(const TArray<FString>& FoundUsers);
 };
