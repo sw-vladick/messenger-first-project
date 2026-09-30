@@ -15,6 +15,8 @@
 #include "Components/WidgetSwitcher.h"
 #include "Components/ScrollBox.h"
 #include "UserListItemWidget.h"
+#include "ChatMessageWidget.h"
+#include "Components/ScrollBoxSlot.h"
 #include "LoginWidget.generated.h"
 
 /**
@@ -67,6 +69,26 @@ protected:
 
 	UFUNCTION()
 	void OnSearchTextChanged(const FText& Text);
+
+	UFUNCTION()
+	void OnUserSelected(FString SelectedUsername);
+
+	FString CurrentChatUser;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UScrollBox* MessagesScrollBox;
+
+	UPROPERTY(EditAnywhere, Category = "UI")
+	TSubclassOf<UChatMessageWidget> ChatMessageClass;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UEditableTextBox* MessageInputBox;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UButton* SendMessageButton;
+
+	UFUNCTION()
+	void OnSendMessageClicked();
 public:
 	UPROPERTY(meta = (BindWidget))
 	UEditableTextBox* LoginInput;
