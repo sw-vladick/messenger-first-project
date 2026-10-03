@@ -12,6 +12,11 @@
 #include "UCryptoClient.h"
 #include "NetworkManagerSubsystem.generated.h"
 
+struct FIncomingFileSession {
+	FString FileName;
+	int32 ExpectedSize;
+	TArray<uint8> Buffer;
+};
 
 UCLASS()
 class MESSENGER_API UNetworkManagerSubsystem : public UGameInstanceSubsystem
@@ -29,7 +34,18 @@ public:
 
 	class DataReceiverRunnable* ReceiverThread;
 
+	void SendEncryptedCommand(const FString& CommandName, TSharedPtr<FJsonObject> InnerData = nullptr);
+
+	UPROPERTY()
 	class UCryptoClient* CryptoClient;
+
+	void SendFileToServer(const FString& FilePath, const FString& TargetUser);
+
+	TMap<FString, FIncomingFileSession> IncomingFiles;
+
+	void HandleFileReceiveStart(const FString& TransferID, const FString& FileName, int32 FileSize);
+	void HandleFileReceiveChunk(const FString& TransferID, const FString& Base64Data);
+	void HandleFileReceiveEnd(const FString& TransferID);
 private:
 	FSocket* ClientSocket;
 	

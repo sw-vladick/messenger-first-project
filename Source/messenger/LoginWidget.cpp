@@ -1,4 +1,9 @@
 #include "LoginWidget.h"
+#include "NetworkManagerSubsystem.h"
+#include "NetworkConstants.h"
+#include "Dom/JsonObject.h"
+#include "Developer/DesktopPlatform/Public/IDesktopPlatform.h"
+#include "Developer/DesktopPlatform/Public/DesktopPlatformModule.h"
 
 void ULoginWidget::UpdatePasswordButtonIcon(bool bIsVisible)
 {
@@ -41,9 +46,11 @@ void ULoginWidget::NativeConstruct()
 	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
 	if (NetSubsystem && NetSubsystem->ResponseRouter)
 	{
-		NetSubsystem->ResponseRouter->OnServerResponse.AddDynamic(this, &ULoginWidget::OnServerResponseReceived);
-
+		NetSubsystem->ResponseRouter->OnLoginResponseDelegate.AddDynamic(this, &ULoginWidget::HandleLoginResponse);
+		NetSubsystem->ResponseRouter->OnRegisterResponseDelegate.AddDynamic(this, &ULoginWidget::HandleRegisterResponse);
 		NetSubsystem->ResponseRouter->OnSearchResultsDelegate.AddDynamic(this, &ULoginWidget::UpdateSearchResults);
+		NetSubsystem->ResponseRouter->OnChatHistoryDelegate.AddDynamic(this, &ULoginWidget::HandleChatHistory);
+		NetSubsystem->ResponseRouter->OnUpdateChatDelegate.AddDynamic(this, &ULoginWidget::HandleUpdateChat);
 	}
 	if (SearchInputText) {
 		SearchInputText->OnTextChanged.AddDynamic(this, &ULoginWidget::OnSearchTextChanged);
@@ -51,10 +58,38 @@ void ULoginWidget::NativeConstruct()
 	if (SendMessageButton) {
 		SendMessageButton->OnClicked.AddDynamic(this, &ULoginWidget::OnSendMessageClicked);
 	}
+	if (RegistrationButton) {
+		RegistrationButton->OnClicked.AddDynamic(this, &ULoginWidget::OnRegistrationButtonClicked);
+	}
+	if (LogoutButton) {
+		LogoutButton->OnClicked.AddDynamic(this, &ULoginWidget::OnLogoutButtonClicked);
+	}
+	if (AttachFileButton) {
+		AttachFileButton->OnClicked.AddDynamic(this, &ULoginWidget::OnAttachFileButtonClicked);
+	}
+}
+FReply ULoginWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Enter)
+	{
+		if (MessageInputBox && MessageInputBox->HasKeyboardFocus())
+		{
+			if (!InKeyEvent.IsShiftDown())
+			{
+				OnSendMessageClicked();
+				return FReply::Handled();
+			}
+		}
+	}
+
+	return Super::NativeOnPreviewKeyDown(InGeometry, InKeyEvent);
 }
 
 void ULoginWidget::OnLoginButtonClicked()
 {
+	if (LoginButton) {
+		LoginButton->SetIsEnabled(false);
+	}
 	if (!LoginInput || !PasswordInput)
 	{
 		return;
@@ -89,25 +124,11 @@ void ULoginWidget::OnLoginButtonClicked()
 
 	if (NetSubsystem) {
 		if (NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
-			TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
-			InnerJson->SetStringField(TEXT("Username"), Username);
-			InnerJson->SetStringField(TEXT("Password"), Password);
+			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+			Json->SetStringField(TEXT("Username"), Username);
+			Json->SetStringField(TEXT("Password"), Password);
 
-			FString InnerPayload;
-			TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
-			FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
-
-			FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
-
-			TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
-			EnvelopeJson->SetStringField(TEXT("Command"), TEXT("LOGIN"));
-			EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
-
-			FString FinalString;
-			TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
-			FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
-
-			NetSubsystem->SendTextMessage(FinalString);
+			NetSubsystem->SendEncryptedCommand(TEXT("LOGIN"), Json);
 		}
 		else {
 			UE_LOG(LogTemp, Error, TEXT("Не вдалося підключитися до сервера!"));
@@ -162,147 +183,95 @@ void ULoginWidget::SendRegisterRequest(const FString& Username, const FString& P
 		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
 		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
 
-		if (NetSubsystem) {
-			if (NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
-				TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
-				InnerJson->SetStringField(TEXT("Username"), Username);
-				InnerJson->SetStringField(TEXT("Password"), Password);
+		if (NetSubsystem && NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
+			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+			Json->SetStringField(TEXT("Username"), Username);
+			Json->SetStringField(TEXT("Password"), Password);
 
-				FString InnerPayload;
-				TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
-				FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
-
-				FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
-
-				TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
-				EnvelopeJson->SetStringField(TEXT("Command"), TEXT("REGISTER"));
-				EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
-
-				FString FinalString;
-				TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
-				FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
-
-				NetSubsystem->SendTextMessage(FinalString);
-			}
-			else {
-				UE_LOG(LogTemp, Error, TEXT("Не вдалося підключитися до сервера при реєстрації!"));
-			}
+			NetSubsystem->SendEncryptedCommand(TEXT("REGISTER"), Json);
 		}
 	}
 	else {
 		ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Пароль має містити від 8-64 символів, велику літеру, цифру та спецсимвол.")));
 		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
 	}
-	
 }
 
-void ULoginWidget::OnServerResponseReceived(FString Command, FString StatusData)
+void ULoginWidget::HandleLoginResponse(FString Status)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[WIDGET] Отримано сигнал від роутера!"));
+	if (LoginButton) {
+		LoginButton->SetIsEnabled(true);
+	}
 
-	FString RealStatus = StatusData;
+	if (Status == TEXT("success")) {
+		ErrorText_Password->SetVisibility(ESlateVisibility::Hidden);
+		WidgetSwitcher_0->SetActiveWidgetIndex(2);
 
-	if (Command == TEXT("LOGIN_RESPONSE") || Command == TEXT("REGISTER_RESPONSE") || Command == TEXT("SEARCH_RESPONSE") || Command == TEXT("CHAT_HISTORY_RESPONSE"))
-	{
 		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
-		if (NetSubsystem && NetSubsystem->CryptoClient)
+		if (NetSubsystem) {
+			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+			Json->SetStringField(TEXT("request"), TEXT("get_chats"));
+			NetSubsystem->SendEncryptedCommand(TEXT("GET_RECENT_CHATS"), Json);
+		}
+	}
+	else if (Status == TEXT("locked")) {
+		ErrorText_Password->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
+		ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
+	}
+	else {
+		ErrorText_Password->SetText(FText::FromString(TEXT("Невірний логін або пароль!")));
+		ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+void ULoginWidget::HandleRegisterResponse(FString Status)
+{
+	if (RegistrationButton) {
+		RegistrationButton->SetIsEnabled(true);
+	}
+
+	if (Status == TEXT("success")) {
+		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
+		WidgetSwitcher_0->SetActiveWidgetIndex(2);
+	}
+	else if (Status == TEXT("locked")) {
+		ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
+		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
+	}
+}
+
+void ULoginWidget::HandleUpdateChat()
+{
+	if (!CurrentChatUser.IsEmpty()) {
+		OnUserSelected(CurrentChatUser);
+	}
+}
+
+void ULoginWidget::HandleChatHistory(const TArray<FChatMessageData>& Messages)
+{
+	if (!MessagesScrollBox || !ChatMessageClass) return;
+
+	MessagesScrollBox->ClearChildren();
+
+	for (const FChatMessageData& MsgData : Messages)
+	{
+		bool bIsMine = (MsgData.Sender != CurrentChatUser);
+
+		UChatMessageWidget* NewMsg = CreateWidget<UChatMessageWidget>(this, ChatMessageClass);
+		if (NewMsg)
 		{
-			FString DecryptedStr = NetSubsystem->CryptoClient->DecryptAES(StatusData);
+			NewMsg->ParentWidget = this;
+			NewMsg->Setup(MsgData.ID, MsgData.Sender, MsgData.Text, MsgData.Timestamp, bIsMine, MsgData.bIsEdited, MsgData.bIsRead);
 
-			TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(DecryptedStr);
-			TSharedPtr<FJsonObject> DecryptedJson;
-			if (FJsonSerializer::Deserialize(Reader, DecryptedJson) && DecryptedJson.IsValid())
+			UScrollBoxSlot* ScrollSlot = Cast<UScrollBoxSlot>(MessagesScrollBox->AddChild(NewMsg));
+			if (ScrollSlot)
 			{
-				RealStatus = DecryptedJson->GetStringField(TEXT("status"));
-
-				if (Command == TEXT("SEARCH_RESPONSE"))
-				{
-					const TArray<TSharedPtr<FJsonValue>>* UsersArray;
-					if (DecryptedJson->TryGetArrayField(TEXT("users"), UsersArray))
-					{
-						TArray<FString> FoundUsers;
-						for (const TSharedPtr<FJsonValue>& Val : *UsersArray)
-						{
-							FoundUsers.Add(Val->AsString());
-						}
-						UpdateSearchResults(FoundUsers);
-					}
-				}
-				else if (Command == TEXT("CHAT_HISTORY_RESPONSE"))
-				{
-					if (MessagesScrollBox && ChatMessageClass)
-					{
-						MessagesScrollBox->ClearChildren();
-
-						const TArray<TSharedPtr<FJsonValue>>* MessagesArray;
-
-						if (DecryptedJson->TryGetArrayField(TEXT("messages"), MessagesArray))
-						{
-							for (const TSharedPtr<FJsonValue>& Val : *MessagesArray)
-							{
-								TSharedPtr<FJsonObject> MsgObj = Val->AsObject();
-								if (MsgObj.IsValid())
-								{
-									FString Sender = MsgObj->GetStringField(TEXT("sender"));
-									FString Text = MsgObj->GetStringField(TEXT("text"));
-									FString Time = MsgObj->GetStringField(TEXT("timestamp"));
-
-									bool bIsMine = (Sender != CurrentChatUser);
-
-									UChatMessageWidget* NewMsg = CreateWidget<UChatMessageWidget>(this, ChatMessageClass);
-									if (NewMsg)
-									{
-										NewMsg->Setup(Sender, Text, Time, bIsMine);
-
-										UScrollBoxSlot* ScrollSlot = Cast<UScrollBoxSlot>(MessagesScrollBox->AddChild(NewMsg));
-										if (ScrollSlot)
-										{
-											ScrollSlot->SetHorizontalAlignment(bIsMine ? HAlign_Right : HAlign_Left);
-
-											ScrollSlot->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 5.0f));
-										}
-									}
-								}
-							}
-							MessagesScrollBox->ScrollToEnd();
-						}
-					}
-				}
+				ScrollSlot->SetHorizontalAlignment(bIsMine ? HAlign_Right : HAlign_Left);
+				ScrollSlot->SetPadding(FMargin(0.0f, 5.0f, 0.0f, 5.0f));
 			}
 		}
 	}
-
-
-	if (Command == TEXT("LOGIN_RESPONSE"))
-	{
-		if (RealStatus == TEXT("success")) {
-			ErrorText_Password->SetVisibility(ESlateVisibility::Hidden);
-			WidgetSwitcher_0->SetActiveWidgetIndex(2);
-		}
-		else if (RealStatus == TEXT("locked")) {
-			ErrorText_Password->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
-			ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
-		}
-		else {
-			ErrorText_Password->SetText(FText::FromString(TEXT("Невірний логін або пароль!")));
-			ErrorText_Password->SetVisibility(ESlateVisibility::Visible);
-		}
-	}
-	else if (Command == TEXT("REGISTER_RESPONSE"))
-	{
-		if (RealStatus == TEXT("success")) {
-			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
-			WidgetSwitcher_0->SetActiveWidgetIndex(2);
-		}
-		else if (RealStatus == TEXT("locked")) {
-			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
-			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
-		}
-		else {
-			ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Користувач вже існує або помилка!")));
-			ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
-		}
-	}
+	MessagesScrollBox->ScrollToEnd();
 }
 
 void ULoginWidget::OnSearchCommitted(const FText& Text, ETextCommit::Type CommitMethod)
@@ -312,26 +281,11 @@ void ULoginWidget::OnSearchCommitted(const FText& Text, ETextCommit::Type Commit
 		if (SearchQuery.IsEmpty()) return;
 
 		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
-		if (NetSubsystem && NetSubsystem->CryptoClient) {
+		if (NetSubsystem) {
+			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+			Json->SetStringField(TEXT("username"), SearchQuery);
 
-			TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
-			InnerJson->SetStringField(TEXT("username"), SearchQuery);
-
-			FString InnerPayload;
-			TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
-			FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
-
-			FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
-
-			TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
-			EnvelopeJson->SetStringField(TEXT("Command"), TEXT("SEARCH_USER"));
-			EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
-
-			FString FinalString;
-			TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
-			FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
-
-			NetSubsystem->SendTextMessage(FinalString);
+			NetSubsystem->SendEncryptedCommand(TEXT("SEARCH_USER"), Json);
 		}
 	}
 }
@@ -362,66 +316,34 @@ void ULoginWidget::UpdateSearchResults(const TArray<FString>& FoundUsers)
 void ULoginWidget::OnSearchTextChanged(const FText& Text)
 {
 	FString SearchQuery = Text.ToString();
-
-	if (SearchQuery.IsEmpty()) {
-		UpdateSearchResults(TArray<FString>());
-		return;
-	}
-
 	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
-	if (NetSubsystem && NetSubsystem->CryptoClient) {
-		TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
-		InnerJson->SetStringField(TEXT("username"), SearchQuery);
 
-		FString InnerPayload;
-		TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
-		FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
+	if (NetSubsystem) {
+		TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
 
-		FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
-
-		TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
-		EnvelopeJson->SetStringField(TEXT("Command"), TEXT("SEARCH_USER"));
-		EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
-
-		FString FinalString;
-		TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
-		FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
-
-		NetSubsystem->SendTextMessage(FinalString);
+		if (SearchQuery.IsEmpty()) {
+			Json->SetStringField(TEXT("request"), TEXT("get_chats"));
+			NetSubsystem->SendEncryptedCommand(TEXT("GET_RECENT_CHATS"), Json);
+		}
+		else {
+			Json->SetStringField(TEXT("username"), SearchQuery);
+			NetSubsystem->SendEncryptedCommand(TEXT("SEARCH_USER"), Json);
+		}
 	}
 }
 
 void ULoginWidget::OnUserSelected(FString SelectedUsername)
 {
-	UE_LOG(LogTemp, Warning, TEXT("[UI] Відкриваємо чат з: %s"), *SelectedUsername);
-
 	CurrentChatUser = SelectedUsername;
 
-	if (MessagesScrollBox) {
-		MessagesScrollBox->ClearChildren();
-	}
+	if (SearchInputText) SearchInputText->SetText(FText::GetEmpty());
+	if (MessagesScrollBox) MessagesScrollBox->ClearChildren();
 
 	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
-	if (NetSubsystem && NetSubsystem->CryptoClient) {
-
-		TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
-		InnerJson->SetStringField(TEXT("target_user"), SelectedUsername);
-
-		FString InnerPayload;
-		TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
-		FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
-
-		FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
-
-		TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
-		EnvelopeJson->SetStringField(TEXT("Command"), TEXT("GET_CHAT_HISTORY"));
-		EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
-
-		FString FinalString;
-		TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
-		FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
-
-		NetSubsystem->SendTextMessage(FinalString);
+	if (NetSubsystem) {
+		TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+		Json->SetStringField(TEXT("target_user"), SelectedUsername);
+		NetSubsystem->SendEncryptedCommand(TEXT("GET_CHAT_HISTORY"), Json);
 	}
 }
 
@@ -433,29 +355,104 @@ void ULoginWidget::OnSendMessageClicked()
 
 	if (MessageText.IsEmpty()) return;
 
+	MessageText = MessageText.TrimStartAndEnd();
+
 	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
-	if (NetSubsystem && NetSubsystem->CryptoClient) {
+	if (NetSubsystem) {
+		FString CommandName = (CurrentEditingMessageID == -1) ? TEXT("SEND_MESSAGE") : TEXT("EDIT_MESSAGE");
 
-		TSharedPtr<FJsonObject> InnerJson = MakeShareable(new FJsonObject());
-		InnerJson->SetStringField(TEXT("target_user"), CurrentChatUser);
-		InnerJson->SetStringField(TEXT("text"), MessageText);
+		TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+		Json->SetStringField(TEXT("target_user"), CurrentChatUser);
+		Json->SetStringField(TEXT("text"), MessageText);
+		if (CurrentEditingMessageID != -1) {
+			Json->SetNumberField(TEXT("message_id"), CurrentEditingMessageID);
+		}
 
-		FString InnerPayload;
-		TSharedRef<TJsonWriter<>> InnerWriter = TJsonWriterFactory<>::Create(&InnerPayload);
-		FJsonSerializer::Serialize(InnerJson.ToSharedRef(), InnerWriter);
-
-		FString EncryptedBase64 = NetSubsystem->CryptoClient->EncryptAES(InnerPayload);
-
-		TSharedPtr<FJsonObject> EnvelopeJson = MakeShareable(new FJsonObject());
-		EnvelopeJson->SetStringField(TEXT("Command"), TEXT("SEND_MESSAGE"));
-		EnvelopeJson->SetStringField(TEXT("payload"), EncryptedBase64);
-
-		FString FinalString;
-		TSharedRef<TJsonWriter<>> EnvWriter = TJsonWriterFactory<>::Create(&FinalString);
-		FJsonSerializer::Serialize(EnvelopeJson.ToSharedRef(), EnvWriter);
-
-		NetSubsystem->SendTextMessage(FinalString);
+		NetSubsystem->SendEncryptedCommand(CommandName, Json);
 
 		MessageInputBox->SetText(FText::GetEmpty());
+		CurrentEditingMessageID = -1;
+	}
+}
+
+void ULoginWidget::OnRegistrationButtonClicked()
+{
+	if (RegistrationButton) {
+		RegistrationButton->SetIsEnabled(false);
+	}
+
+	if (!LoginInputReg || !PasswordInputReg) {
+		if (RegistrationButton) RegistrationButton->SetIsEnabled(true);
+		return;
+	}
+
+	FString Username = LoginInputReg->GetText().ToString();
+	FString Password = PasswordInputReg->GetText().ToString();
+
+	SendRegisterRequest(Username, Password);
+}
+
+void ULoginWidget::StartEditingMessage(int32 MsgID, FString OldText)
+{
+	CurrentEditingMessageID = MsgID;
+
+	if (MessageInputBox) {
+		MessageInputBox->SetText(FText::FromString(OldText));
+
+		MessageInputBox->SetKeyboardFocus();
+	}
+}
+
+void ULoginWidget::OnLogoutButtonClicked()
+{
+
+	CurrentChatUser = TEXT("");
+	CurrentEditingMessageID = -1;
+
+	if (MessagesScrollBox) MessagesScrollBox->ClearChildren();
+	if (ChatsScrollBox) ChatsScrollBox->ClearChildren();
+
+	if (SearchInputText) SearchInputText->SetText(FText::GetEmpty());
+	if (MessageInputBox) MessageInputBox->SetText(FText::GetEmpty());
+
+	if (LoginInput) LoginInput->SetText(FText::GetEmpty());
+	if (PasswordInput) PasswordInput->SetText(FText::GetEmpty());
+
+	if (WidgetSwitcher_0) {
+		WidgetSwitcher_0->SetActiveWidgetIndex(0);
+	}
+
+	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+	if (NetSubsystem) {
+		NetSubsystem->SendEncryptedCommand(TEXT("LOGOUT"));
+	}
+}
+
+void ULoginWidget::OnAttachFileButtonClicked()
+{
+	if (CurrentChatUser.IsEmpty()) return;
+
+	IDesktopPlatform* DesktopPlatform = FDesktopPlatformModule::Get();
+	if (DesktopPlatform) {
+		TArray<FString> OutFileNames;
+
+		bool bOpened = DesktopPlatform->OpenFileDialog(
+			nullptr,
+			TEXT("Оберіть файл для відправки"),
+			TEXT(""),
+			TEXT(""),
+			TEXT("Всі файли (*.*)|*.*|Зображення (*.png;*.jpg)|*.png;*.jpg"),
+			EFileDialogFlags::None,
+			OutFileNames
+		);
+
+		if (bOpened && OutFileNames.Num() > 0) {
+			FString SelectedFilePath = OutFileNames[0];
+
+			UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+			if (NetSubsystem) {
+				NetSubsystem->SendFileToServer(SelectedFilePath, CurrentChatUser);
+			}
+		}
 	}
 }

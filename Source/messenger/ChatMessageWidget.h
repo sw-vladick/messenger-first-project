@@ -11,7 +11,23 @@ class MESSENGER_API UChatMessageWidget : public UUserWidget
 {
 	GENERATED_BODY()
 public:
-	void Setup(const FString& InSender, const FString& InText, const FString& InTime, bool bIsMine);
+	int32 MessageID = -1;
+
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* EditedTextIndicator;
+
+	void Setup(int32 InID, FString Sender, FString Text, FString Time, bool bIsMine, bool bIsEdited, bool bIsRead);
+
+	UPROPERTY()
+	class ULoginWidget* ParentWidget;
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UButton* DownloadButton;
+
+	UFUNCTION()
+	void OnDownloadClicked();
+
+	FString AttachedFileName;
 
 protected:
 
@@ -20,4 +36,15 @@ protected:
 
 	UPROPERTY(meta = (BindWidget))
 	UTextBlock* TimeText;
+
+	UPROPERTY(meta = (BindWidget))
+	class UButton* EditButton;
+
+	virtual void NativeConstruct() override;
+
+	UFUNCTION()
+	void OnEditButtonClicked();
+
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* ReadStatusText;
 };

@@ -39,7 +39,7 @@ uint32 DataReceiverRunnable::Run() {
 
 		bool bSizeRead = Socket->Recv(reinterpret_cast<uint8*>(&DataSize), sizeof(int32), BytesRead, ESocketReceiveFlags::WaitAll);
 
-		if (bSizeRead && BytesRead == sizeof(int32) && DataSize > 0 && DataSize < 100000) {
+		if (bSizeRead && BytesRead == sizeof(int32) && DataSize > 0 && DataSize < 1048576)  {
 
 			UE_LOG(LogTemp, Warning, TEXT("[МЕРЕЖА] Сервер каже, що зараз прилетить JSON розміром: %d байт"), DataSize);
 

@@ -6,16 +6,12 @@
 #include "components/button.h"
 #include "Components/TextBlock.h"
 #include "Styling/SlateBrush.h"
-#include "Sockets.h"
-#include "SocketSubsystem.h"
-#include "Interfaces/IPv4/IPv4Address.h"
-#include "NetworkManagerSubsystem.h"
-#include "NetworkConstants.h"
-#include "Serialization/JsonSerializer.h"
+#include "ServerResponseRouter.h"
 #include "Components/WidgetSwitcher.h"
 #include "Components/ScrollBox.h"
 #include "UserListItemWidget.h"
 #include "ChatMessageWidget.h"
+#include "Components/MultiLineEditableText.h"
 #include "Components/ScrollBoxSlot.h"
 #include "LoginWidget.generated.h"
 
@@ -30,12 +26,26 @@ class MESSENGER_API ULoginWidget : public UUserWidget
 
 protected:
 	UFUNCTION()
-	void OnServerResponseReceived(FString Command, FString Status);
+	void HandleLoginResponse(FString Status);
+
+	UFUNCTION()
+	void HandleRegisterResponse(FString Status);
+
+	UFUNCTION()
+	void HandleChatHistory(const TArray<FChatMessageData>& Messages);
+
+	UFUNCTION()
+	void HandleUpdateChat();
 
 	virtual void NativeConstruct() override;
 
+	virtual FReply NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
+
 	UFUNCTION()
 	void OnLoginButtonClicked();
+
+	UFUNCTION()
+	void OnRegistrationButtonClicked();
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Network | Auth")
 	bool IsPasswordValid(const FString& Password);
@@ -82,14 +92,28 @@ protected:
 	TSubclassOf<UChatMessageWidget> ChatMessageClass;
 
 	UPROPERTY(meta = (BindWidgetOptional))
-	class UEditableTextBox* MessageInputBox;
+	class UMultiLineEditableText* MessageInputBox;
 
 	UPROPERTY(meta = (BindWidgetOptional))
 	class UButton* SendMessageButton;
 
 	UFUNCTION()
 	void OnSendMessageClicked();
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UButton* LogoutButton;
+
+	UFUNCTION()
+	void OnLogoutButtonClicked();
+
+	UPROPERTY(meta = (BindWidgetOptional))
+	class UButton* AttachFileButton;
+
+	UFUNCTION()
+	void OnAttachFileButtonClicked();
 public:
+	void StartEditingMessage(int32 MsgID, FString OldText);
+
 	UPROPERTY(meta = (BindWidget))
 	UEditableTextBox* LoginInput;
 
@@ -140,4 +164,7 @@ public:
 
 	UFUNCTION()
 	void UpdateSearchResults(const TArray<FString>& FoundUsers);
+
+private:
+		int32 CurrentEditingMessageID = -1;
 };

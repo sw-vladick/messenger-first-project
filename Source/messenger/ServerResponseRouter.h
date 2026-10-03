@@ -4,29 +4,44 @@
 #include "UObject/Object.h"
 #include "ServerResponseRouter.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnServerResponse, FString, Command, FString, Status);
+USTRUCT(BlueprintType)
+struct FChatMessageData
+{
+	GENERATED_BODY()
 
+	int32 ID;
+	FString Sender;
+	FString Text;
+	FString Timestamp;
+	bool bIsEdited;
+	bool bIsRead;
+};
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAuthResponse, FString, Status);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSearchResults, const TArray<FString>&, Users);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatHistory, const TArray<FChatMessageData>&, Messages);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnUpdateChat);
+
 UCLASS(BlueprintType, Blueprintable)
 class MESSENGER_API UServerResponseRouter : public UObject
 {
 	GENERATED_BODY()
 public:
 	UServerResponseRouter();
-
-	void ProcessServerResponse(FString Command, FString Status);
-
-	void SendSearchResults(const TArray<FString>& FoundUsers);
+	void ProcessServerResponse(FString Command, FString StatusData);
 
 	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
-	FOnServerResponse OnServerResponse;
+	FOnAuthResponse OnLoginResponseDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnAuthResponse OnRegisterResponseDelegate;
 
 	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
 	FOnSearchResults OnSearchResultsDelegate;
 
-private:
-	TMap<FString, TFunction<void(FString)>> RouteMap;
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnChatHistory OnChatHistoryDelegate;
 
-	void HandleLoginResponse(FString Status);
-	void HandleRegisterResponse(FString Status);
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnUpdateChat OnUpdateChatDelegate;
 };
