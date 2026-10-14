@@ -26,10 +26,22 @@ class MESSENGER_API ULoginWidget : public UUserWidget
 
 protected:
 	UFUNCTION()
-	void HandleLoginResponse(FString Status);
+	void HandleLoginResponse(FString Status, bool bIsVerified);
 
 	UFUNCTION()
-	void HandleRegisterResponse(FString Status);
+	void HandleRegisterResponse(FString Status, bool bIsVerified);
+
+	UFUNCTION()
+	void HandleSendCodeResponse(FString Status);
+
+	UFUNCTION()
+	void HandleVerifyCodeResponse(FString Status);
+
+	UFUNCTION()
+	void OnSendCodeClicked();
+
+	UFUNCTION()
+	void OnVerifyCodeClicked();
 
 	UFUNCTION()
 	void HandleChatHistory(const TArray<FChatMessageData>& Messages);
@@ -111,6 +123,9 @@ protected:
 
 	UFUNCTION()
 	void OnAttachFileButtonClicked();
+
+	FButtonStyle OriginalSendCodeStyle;
+	bool bIsSendCodeStyleSaved = false;
 public:
 	void StartEditingMessage(int32 MsgID, FString OldText);
 
@@ -165,6 +180,29 @@ public:
 	UFUNCTION()
 	void UpdateSearchResults(const TArray<FString>& FoundUsers);
 
+	UPROPERTY(meta = (BindWidget))
+	UEditableTextBox* Input_Email;
+
+	UPROPERTY(meta = (BindWidget))
+	UEditableTextBox* Input_Code;
+
+	UPROPERTY(meta = (BindWidget))
+	UButton* Btn_SendCode;
+
+	UPROPERTY(meta = (BindWidget))
+	UButton* Btn_Verify;
+
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* Text_SendCodeBtn;
+
+	UPROPERTY(meta = (BindWidget))
+	class UTextBlock* ErrorText_Email;
+
+	FTimerHandle SendCodeTimerHandle;
+	int32 SendCodeCountdown;
+
+	UFUNCTION()
+	void UpdateSendCodeTimer();
 private:
 		int32 CurrentEditingMessageID = -1;
 };

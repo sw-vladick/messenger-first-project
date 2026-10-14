@@ -17,7 +17,8 @@ struct FChatMessageData
 	bool bIsRead;
 };
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAuthResponse, FString, Status);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnAuthResponse, FString, Status, bool, bIsVerified);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnEmailResponse, FString, Status);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnSearchResults, const TArray<FString>&, Users);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnChatHistory, const TArray<FChatMessageData>&, Messages);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnUpdateChat);
@@ -44,4 +45,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
 	FOnUpdateChat OnUpdateChatDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnEmailResponse OnSendCodeResponseDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnEmailResponse OnVerifyCodeResponseDelegate;
 };

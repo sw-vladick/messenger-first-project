@@ -17,11 +17,22 @@ void UServerResponseRouter::ProcessServerResponse(FString Command, FString Statu
 	if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid()) return;
 
 	if (Command == TEXT("LOGIN_RESPONSE")) {
-		OnLoginResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")));
+		bool bIsVerified = false;
+		Json->TryGetBoolField(TEXT("is_verified"), bIsVerified);
+		OnLoginResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")), bIsVerified);
 	}
 	else if (Command == TEXT("REGISTER_RESPONSE")) {
-		OnRegisterResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")));
+		bool bIsVerified = false;
+		Json->TryGetBoolField(TEXT("is_verified"), bIsVerified);
+		OnRegisterResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")), bIsVerified);
 	}
+	else if (Command == TEXT("SEND_VERIFICATION_CODE_RESPONSE")) {
+		OnSendCodeResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")));
+	}
+	else if (Command == TEXT("VERIFY_CODE_RESPONSE")) {
+		OnVerifyCodeResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")));
+	}
+
 	else if (Command == TEXT("SEARCH_RESPONSE") || Command == TEXT("RECENT_CHATS_RESPONSE")) {
 		TArray<FString> FoundUsers;
 		const TArray<TSharedPtr<FJsonValue>>* UsersArray;

@@ -51,6 +51,15 @@ void ULoginWidget::NativeConstruct()
 		NetSubsystem->ResponseRouter->OnSearchResultsDelegate.AddDynamic(this, &ULoginWidget::UpdateSearchResults);
 		NetSubsystem->ResponseRouter->OnChatHistoryDelegate.AddDynamic(this, &ULoginWidget::HandleChatHistory);
 		NetSubsystem->ResponseRouter->OnUpdateChatDelegate.AddDynamic(this, &ULoginWidget::HandleUpdateChat);
+		NetSubsystem->ResponseRouter->OnSendCodeResponseDelegate.AddDynamic(this, &ULoginWidget::HandleSendCodeResponse);
+		NetSubsystem->ResponseRouter->OnVerifyCodeResponseDelegate.AddDynamic(this, &ULoginWidget::HandleVerifyCodeResponse);
+	}
+
+	if (Btn_SendCode) {
+		Btn_SendCode->OnClicked.AddDynamic(this, &ULoginWidget::OnSendCodeClicked);
+	}
+	if (Btn_Verify) {
+		Btn_Verify->OnClicked.AddDynamic(this, &ULoginWidget::OnVerifyCodeClicked);
 	}
 	if (SearchInputText) {
 		SearchInputText->OnTextChanged.AddDynamic(this, &ULoginWidget::OnSearchTextChanged);
@@ -197,7 +206,7 @@ void ULoginWidget::SendRegisterRequest(const FString& Username, const FString& P
 	}
 }
 
-void ULoginWidget::HandleLoginResponse(FString Status)
+void ULoginWidget::HandleLoginResponse(FString Status, bool bIsVerified)
 {
 	if (LoginButton) {
 		LoginButton->SetIsEnabled(true);
@@ -205,13 +214,19 @@ void ULoginWidget::HandleLoginResponse(FString Status)
 
 	if (Status == TEXT("success")) {
 		ErrorText_Password->SetVisibility(ESlateVisibility::Hidden);
-		WidgetSwitcher_0->SetActiveWidgetIndex(2);
 
-		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
-		if (NetSubsystem) {
-			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
-			Json->SetStringField(TEXT("request"), TEXT("get_chats"));
-			NetSubsystem->SendEncryptedCommand(TEXT("GET_RECENT_CHATS"), Json);
+		if (bIsVerified) {
+			WidgetSwitcher_0->SetActiveWidgetIndex(2);
+
+			UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+			if (NetSubsystem) {
+				TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+				Json->SetStringField(TEXT("request"), TEXT("get_chats"));
+				NetSubsystem->SendEncryptedCommand(TEXT("GET_RECENT_CHATS"), Json);
+			}
+		}
+		else {
+			WidgetSwitcher_0->SetActiveWidgetIndex(3);
 		}
 	}
 	else if (Status == TEXT("locked")) {
@@ -224,7 +239,7 @@ void ULoginWidget::HandleLoginResponse(FString Status)
 	}
 }
 
-void ULoginWidget::HandleRegisterResponse(FString Status)
+void ULoginWidget::HandleRegisterResponse(FString Status, bool bIsVerified)
 {
 	if (RegistrationButton) {
 		RegistrationButton->SetIsEnabled(true);
@@ -232,7 +247,7 @@ void ULoginWidget::HandleRegisterResponse(FString Status)
 
 	if (Status == TEXT("success")) {
 		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
-		WidgetSwitcher_0->SetActiveWidgetIndex(2);
+		WidgetSwitcher_0->SetActiveWidgetIndex(3);
 	}
 	else if (Status == TEXT("locked")) {
 		ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Забагато спроб, спробуйте пізніше!")));
@@ -454,5 +469,134 @@ void ULoginWidget::OnAttachFileButtonClicked()
 				NetSubsystem->SendFileToServer(SelectedFilePath, CurrentChatUser);
 			}
 		}
+	}
+}
+
+void ULoginWidget::OnSendCodeClicked()
+{
+	if (!Input_Email) return;
+
+	FString Email = Input_Email->GetText().ToString().TrimStartAndEnd();
+	if (Email.IsEmpty()) return;
+
+	if (Btn_SendCode) {
+		if (!bIsSendCodeStyleSaved) {
+			OriginalSendCodeStyle = Btn_SendCode->GetStyle();
+			bIsSendCodeStyleSaved = true;
+		}
+
+		Btn_SendCode->SetIsEnabled(false);
+
+		FButtonStyle DisabledStyle = OriginalSendCodeStyle;
+		FSlateBrush EmptyBrush;
+		EmptyBrush.TintColor = FSlateColor(FLinearColor(0.2f, 0.2f, 0.2f, 1.0f));
+		DisabledStyle.SetDisabled(EmptyBrush);
+		Btn_SendCode->SetStyle(DisabledStyle);
+	}
+
+	if (Text_SendCodeBtn) {
+		Text_SendCodeBtn->SetVisibility(ESlateVisibility::Visible);
+	}
+
+	SendCodeCountdown = 60;
+	GetWorld()->GetTimerManager().SetTimer(SendCodeTimerHandle, this, &ULoginWidget::UpdateSendCodeTimer, 1.0f, true);
+	UpdateSendCodeTimer();
+
+	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+	if (NetSubsystem) {
+		TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+		Json->SetStringField(TEXT("email"), Email);
+
+		NetSubsystem->SendEncryptedCommand(TEXT("SEND_VERIFICATION_CODE"), Json);
+	}
+}
+
+void ULoginWidget::OnVerifyCodeClicked()
+{
+	if (!Input_Email || !Input_Code) return;
+
+	FString Email = Input_Email->GetText().ToString().TrimStartAndEnd();
+	FString Code = Input_Code->GetText().ToString().TrimStartAndEnd();
+
+	if (Email.IsEmpty() || Code.IsEmpty()) return;
+
+	if (Btn_Verify) {
+		Btn_Verify->SetIsEnabled(false);
+	}
+
+	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+	if (NetSubsystem) {
+		TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+		Json->SetStringField(TEXT("email"), Email);
+		Json->SetStringField(TEXT("code"), Code);
+
+		NetSubsystem->SendEncryptedCommand(TEXT("VERIFY_CODE"), Json);
+	}
+}
+
+void ULoginWidget::HandleSendCodeResponse(FString Status)
+{
+	if (Status == TEXT("success")) {
+		if (ErrorText_Email) ErrorText_Email->SetVisibility(ESlateVisibility::Hidden);
+	}
+	else if (Status == TEXT("locked")) {
+		if (ErrorText_Email) {
+			ErrorText_Email->SetText(FText::FromString(TEXT("Забагато помилок! Пошту заблоковано на 5 хв.")));
+			ErrorText_Email->SetVisibility(ESlateVisibility::Visible);
+		}
+
+		if (Btn_SendCode) Btn_SendCode->SetIsEnabled(false);
+		SendCodeCountdown = 300;
+		GetWorld()->GetTimerManager().SetTimer(SendCodeTimerHandle, this, &ULoginWidget::UpdateSendCodeTimer, 1.0f, true);
+	}
+}
+
+void ULoginWidget::HandleVerifyCodeResponse(FString Status)
+{
+	if (Btn_Verify) Btn_Verify->SetIsEnabled(true);
+
+	if (Status == TEXT("success")) {
+		if (ErrorText_Email) ErrorText_Email->SetVisibility(ESlateVisibility::Hidden);
+		WidgetSwitcher_0->SetActiveWidgetIndex(2);
+
+		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+		if (NetSubsystem) {
+			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+			Json->SetStringField(TEXT("request"), TEXT("get_chats"));
+			NetSubsystem->SendEncryptedCommand(TEXT("GET_RECENT_CHATS"), Json);
+		}
+	}
+	else if (Status == TEXT("locked")) {
+		if (ErrorText_Email) {
+			ErrorText_Email->SetText(FText::FromString(TEXT("Забагато помилок! Пошту заблоковано на 5 хв.")));
+			ErrorText_Email->SetVisibility(ESlateVisibility::Visible);
+		}
+	}
+	else {
+		if (ErrorText_Email) {
+			ErrorText_Email->SetText(FText::FromString(TEXT("Невірний код!")));
+			ErrorText_Email->SetVisibility(ESlateVisibility::Visible);
+		}
+	}
+}
+
+void ULoginWidget::UpdateSendCodeTimer()
+{
+	SendCodeCountdown--;
+	if (SendCodeCountdown > 0) {
+		if (Text_SendCodeBtn) {
+			Text_SendCodeBtn->SetText(FText::FromString(FString::Printf(TEXT("%d с"), SendCodeCountdown)));
+		}
+	}
+	else {
+		GetWorld()->GetTimerManager().ClearTimer(SendCodeTimerHandle);
+		if (Btn_SendCode) {
+            Btn_SendCode->SetIsEnabled(true);
+            Btn_SendCode->SetStyle(OriginalSendCodeStyle); 
+        }
+        if (Text_SendCodeBtn) {
+            Text_SendCodeBtn->SetText(FText::GetEmpty());
+            Text_SendCodeBtn->SetVisibility(ESlateVisibility::Hidden);
+        }
 	}
 }
