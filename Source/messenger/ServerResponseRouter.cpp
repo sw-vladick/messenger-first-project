@@ -16,6 +16,10 @@ void UServerResponseRouter::ProcessServerResponse(FString Command, FString Statu
 
 	if (!FJsonSerializer::Deserialize(Reader, Json) || !Json.IsValid()) return;
 
+
+	if (Command == TEXT("HANDSHAKE_RESPONSE")) {
+		OnHandshakeResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")));
+	}
 	if (Command == TEXT("LOGIN_RESPONSE")) {
 		bool bIsVerified = false;
 		Json->TryGetBoolField(TEXT("is_verified"), bIsVerified);
@@ -32,7 +36,9 @@ void UServerResponseRouter::ProcessServerResponse(FString Command, FString Statu
 	else if (Command == TEXT("VERIFY_CODE_RESPONSE")) {
 		OnVerifyCodeResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")));
 	}
-
+	else if (Command == TEXT("GOOGLE_LOGIN_RESPONSE")) {
+		OnGoogleLoginResponseDelegate.Broadcast(Json->GetStringField(TEXT("status")), true);
+	}
 	else if (Command == TEXT("SEARCH_RESPONSE") || Command == TEXT("RECENT_CHATS_RESPONSE")) {
 		TArray<FString> FoundUsers;
 		const TArray<TSharedPtr<FJsonValue>>* UsersArray;

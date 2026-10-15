@@ -13,6 +13,7 @@
 #include "ChatMessageWidget.h"
 #include "Components/MultiLineEditableText.h"
 #include "Components/ScrollBoxSlot.h"
+#include "WebBrowser.h"
 #include "LoginWidget.generated.h"
 
 /**
@@ -126,6 +127,15 @@ protected:
 
 	FButtonStyle OriginalSendCodeStyle;
 	bool bIsSendCodeStyleSaved = false;
+
+	UFUNCTION()
+	void OnGoogleLoginClicked();
+
+	UFUNCTION()
+	void OnUrlChanged(const FText& Text);
+
+	UFUNCTION()
+	void HandleGoogleLoginResponse(FString Status, bool bIsVerified);
 public:
 	void StartEditingMessage(int32 MsgID, FString OldText);
 
@@ -203,6 +213,12 @@ public:
 
 	UFUNCTION()
 	void UpdateSendCodeTimer();
+
+	UPROPERTY(meta = (BindWidget))
+	class UButton* Btn_GoogleLogin;
+
+	UPROPERTY(meta = (BindWidget))
+	class UWebBrowser* GoogleWebBrowser;
 private:
-		int32 CurrentEditingMessageID = -1;
+	int32 CurrentEditingMessageID = -1;
 };

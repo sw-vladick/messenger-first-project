@@ -10,7 +10,8 @@ public class messenger : ModuleRules
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 	
 		
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG", "Sockets", "Networking", "Json", "JsonUtilities","DesktopPlatform" });
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UMG",
+			"Sockets", "Networking", "Json", "JsonUtilities","DesktopPlatform","WebBrowserWidget", "WebBrowser" });
 
 		PrivateDependencyModuleNames.AddRange(new string[] {  });
 

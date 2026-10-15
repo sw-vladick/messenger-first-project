@@ -53,8 +53,8 @@ void ULoginWidget::NativeConstruct()
 		NetSubsystem->ResponseRouter->OnUpdateChatDelegate.AddDynamic(this, &ULoginWidget::HandleUpdateChat);
 		NetSubsystem->ResponseRouter->OnSendCodeResponseDelegate.AddDynamic(this, &ULoginWidget::HandleSendCodeResponse);
 		NetSubsystem->ResponseRouter->OnVerifyCodeResponseDelegate.AddDynamic(this, &ULoginWidget::HandleVerifyCodeResponse);
+		NetSubsystem->ResponseRouter->OnGoogleLoginResponseDelegate.AddDynamic(this, &ULoginWidget::HandleGoogleLoginResponse);
 	}
-
 	if (Btn_SendCode) {
 		Btn_SendCode->OnClicked.AddDynamic(this, &ULoginWidget::OnSendCodeClicked);
 	}
@@ -75,6 +75,12 @@ void ULoginWidget::NativeConstruct()
 	}
 	if (AttachFileButton) {
 		AttachFileButton->OnClicked.AddDynamic(this, &ULoginWidget::OnAttachFileButtonClicked);
+	}
+	if (Btn_GoogleLogin) {
+		Btn_GoogleLogin->OnClicked.AddDynamic(this, &ULoginWidget::OnGoogleLoginClicked);
+	}
+	if (GoogleWebBrowser) {
+		GoogleWebBrowser->OnUrlChanged.AddDynamic(this, &ULoginWidget::OnUrlChanged);
 	}
 }
 FReply ULoginWidget::NativeOnPreviewKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent)
@@ -101,6 +107,7 @@ void ULoginWidget::OnLoginButtonClicked()
 	}
 	if (!LoginInput || !PasswordInput)
 	{
+		if (LoginButton) LoginButton->SetIsEnabled(true);
 		return;
 	}
 	FString Username = LoginInput->GetText().ToString();
@@ -126,9 +133,10 @@ void ULoginWidget::OnLoginButtonClicked()
 	}
 
 	if (bHasError) {
+		if (LoginButton) LoginButton->SetIsEnabled(true);
 		return;
 	}
-	
+
 	UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
 
 	if (NetSubsystem) {
@@ -141,6 +149,7 @@ void ULoginWidget::OnLoginButtonClicked()
 		}
 		else {
 			UE_LOG(LogTemp, Error, TEXT("Не вдалося підключитися до сервера!"));
+			if (LoginButton) LoginButton->SetIsEnabled(true);
 		}
 	}
 }
@@ -192,17 +201,24 @@ void ULoginWidget::SendRegisterRequest(const FString& Username, const FString& P
 		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Hidden);
 		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
 
-		if (NetSubsystem && NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
-			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
-			Json->SetStringField(TEXT("Username"), Username);
-			Json->SetStringField(TEXT("Password"), Password);
+		if (NetSubsystem) {
+			if (NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
+				TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+				Json->SetStringField(TEXT("Username"), Username);
+				Json->SetStringField(TEXT("Password"), Password);
 
-			NetSubsystem->SendEncryptedCommand(TEXT("REGISTER"), Json);
+				NetSubsystem->SendEncryptedCommand(TEXT("REGISTER"), Json);
+			}
+			else {
+				if (RegistrationButton) RegistrationButton->SetIsEnabled(true);
+			}
 		}
 	}
 	else {
 		ErrorText_Password_Reg->SetText(FText::FromString(TEXT("Пароль має містити від 8-64 символів, велику літеру, цифру та спецсимвол.")));
 		ErrorText_Password_Reg->SetVisibility(ESlateVisibility::Visible);
+
+		if (RegistrationButton) RegistrationButton->SetIsEnabled(true);
 	}
 }
 
@@ -598,5 +614,85 @@ void ULoginWidget::UpdateSendCodeTimer()
             Text_SendCodeBtn->SetText(FText::GetEmpty());
             Text_SendCodeBtn->SetVisibility(ESlateVisibility::Hidden);
         }
+	}
+}
+
+void ULoginWidget::OnGoogleLoginClicked()
+{
+	if (WidgetSwitcher_0) {
+		WidgetSwitcher_0->SetActiveWidgetIndex(4);
+	}
+
+	if (GoogleWebBrowser) {
+		FString ClientID = TEXT("1087750433701-t197ngi71m3o8uu5p1ueeh1di8crh7qh.apps.googleusercontent.com");
+		FString RedirectURI = TEXT("http://127.0.0.1");
+
+		FString AuthUrl = FString::Printf(TEXT("https://accounts.google.com/o/oauth2/v2/auth?client_id=%s&redirect_uri=%s&response_type=code&scope=email%%20profile&prompt=select_account"), *ClientID, *RedirectURI);
+
+		GoogleWebBrowser->LoadURL(AuthUrl);
+	}
+}
+
+void ULoginWidget::OnUrlChanged(const FText& Text)
+{
+	FString CurrentUrl = Text.ToString();
+
+	if (CurrentUrl.Contains(TEXT("127.0.0.1")))
+	{
+		FString SearchPattern = TEXT("code=");
+		int32 CodeIndex = CurrentUrl.Find(SearchPattern);
+
+		if (CodeIndex != INDEX_NONE)
+		{
+			FString CodeStr = CurrentUrl.RightChop(CodeIndex + SearchPattern.Len());
+
+			int32 AmpersandIndex;
+			if (CodeStr.FindChar('&', AmpersandIndex)) {
+				CodeStr = CodeStr.Left(AmpersandIndex);
+			}
+
+			if (WidgetSwitcher_0) {
+				WidgetSwitcher_0->SetActiveWidgetIndex(0);
+			}
+
+			UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+			if (NetSubsystem) {
+				if (NetSubsystem->ConnectToServer(TEXT("127.0.0.1"), NetConst::PORT)) {
+
+					TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+					Json->SetStringField(TEXT("code"), CodeStr);
+
+					NetSubsystem->SendEncryptedCommand(TEXT("GOOGLE_LOGIN"), Json);
+				}
+				else {
+					if (ErrorText_Login) {
+						ErrorText_Login->SetText(FText::FromString(TEXT("Не вдалося підключитися до сервера!")));
+						ErrorText_Login->SetVisibility(ESlateVisibility::Visible);
+					}
+				}
+			}
+		}
+	}
+}
+
+void ULoginWidget::HandleGoogleLoginResponse(FString Status, bool bIsVerified)
+{
+	if (Status == TEXT("success")) {
+		if (WidgetSwitcher_0) {
+			WidgetSwitcher_0->SetActiveWidgetIndex(2);
+		}
+
+		UNetworkManagerSubsystem* NetSubsystem = GetGameInstance()->GetSubsystem<UNetworkManagerSubsystem>();
+		if (NetSubsystem) {
+			TSharedPtr<FJsonObject> Json = MakeShareable(new FJsonObject());
+			Json->SetStringField(TEXT("request"), TEXT("get_chats"));
+			NetSubsystem->SendEncryptedCommand(TEXT("GET_RECENT_CHATS"), Json);
+		}
+	}
+	else {
+		if (ErrorText_Login) {
+			ErrorText_Login->SetText(FText::FromString(TEXT("Помилка авторизації через Google.")));
+			ErrorText_Login->SetVisibility(ESlateVisibility::Visible);
+		}
 	}
 }

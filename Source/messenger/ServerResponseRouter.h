@@ -51,4 +51,10 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
 	FOnEmailResponse OnVerifyCodeResponseDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnAuthResponse OnGoogleLoginResponseDelegate;
+
+	UPROPERTY(BlueprintAssignable, Category = "NetworkRouting")
+	FOnEmailResponse OnHandshakeResponseDelegate;
 };
